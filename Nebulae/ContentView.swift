@@ -11,7 +11,10 @@ struct Project: Identifiable, Hashable {
     var lastUpdated: Date
     var imageData: Data? = nil
     var iconSystemName: String? = nil
+    var teamSize: String = "1"
 }
+
+let nebulaeTeamSizes: [String] = ["1", "2", "3", "4", "5+"]
 
 struct IconCategory: Identifiable {
     let id = UUID()
@@ -74,16 +77,48 @@ struct HomeView: View {
     @State private var projectBeingEdited: Project?
     @State private var searchText = ""
     @State private var navigationPath: [Project] = []
+    @State private var selectedSort: SortOption?
+    @State private var teamSizeFilter: String?
+
+    enum SortOption: String, CaseIterable, Identifiable {
+        case field = "Field"
+        case stage = "Stage"
+        case alphabetical = "Alphabetical"
+        case dateStarted = "Date Started"
+        case lastUpdated = "Last Updated"
+
+        var id: String { rawValue }
+    }
 
     private var filteredProjects: [Project] {
-        guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return projects
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var base = query.isEmpty
+            ? projects
+            : projects.filter { $0.name.localizedCaseInsensitiveContains(query) }
+        if let size = teamSizeFilter {
+            base = base.filter { $0.teamSize == size }
         }
+        return sorted(base)
+    }
 
-        return projects.filter { project in
-            project.name.localizedCaseInsensitiveContains(searchText)
-            || project.engineeringField.localizedCaseInsensitiveContains(searchText)
-            || project.currentStage.localizedCaseInsensitiveContains(searchText)
+    private func sorted(_ list: [Project]) -> [Project] {
+        guard let sort = selectedSort else { return list }
+        switch sort {
+        case .field:
+            return list.sorted { $0.engineeringField.localizedCaseInsensitiveCompare($1.engineeringField) == .orderedAscending }
+        case .stage:
+            let order = ["Idea", "Research", "Design", "Prototype", "Testing", "Completed"]
+            return list.sorted { a, b in
+                let ai = order.firstIndex(of: a.currentStage) ?? Int.max
+                let bi = order.firstIndex(of: b.currentStage) ?? Int.max
+                return ai < bi
+            }
+        case .alphabetical:
+            return list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .dateStarted:
+            return list.sorted { $0.dateCreated > $1.dateCreated }
+        case .lastUpdated:
+            return list.sorted { $0.lastUpdated > $1.lastUpdated }
         }
     }
 
@@ -112,7 +147,7 @@ struct HomeView: View {
                 CreateProjectSheetView { project in
                     projects.append(project)
                 }
-                .presentationDetents([.height(640), .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
                 .presentationBackground(.thickMaterial)
@@ -124,7 +159,7 @@ struct HomeView: View {
                         projects[index] = updatedProject
                     }
                 }
-                .presentationDetents([.height(640), .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .presentationCornerRadius(28)
                 .presentationBackground(.thickMaterial)
@@ -244,7 +279,45 @@ struct HomeView: View {
                         .stroke(Color.gray.opacity(0.18), lineWidth: 1)
                 )
 
-                Button(action: {}) {
+                Menu {
+                    Section("Sort") {
+                        ForEach(SortOption.allCases) { option in
+                            Button {
+                                selectedSort = (selectedSort == option) ? nil : option
+                            } label: {
+                                if selectedSort == option {
+                                    Label(option.rawValue, systemImage: "checkmark")
+                                } else {
+                                    Text(option.rawValue)
+                                }
+                            }
+                        }
+                    }
+                    Section("Filter") {
+                        Menu("Number of People") {
+                            Button {
+                                teamSizeFilter = nil
+                            } label: {
+                                if teamSizeFilter == nil {
+                                    Label("All", systemImage: "checkmark")
+                                } else {
+                                    Text("All")
+                                }
+                            }
+                            ForEach(nebulaeTeamSizes, id: \.self) { size in
+                                Button {
+                                    teamSizeFilter = (teamSizeFilter == size) ? nil : size
+                                } label: {
+                                    if teamSizeFilter == size {
+                                        Label(size, systemImage: "checkmark")
+                                    } else {
+                                        Text(size)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
                     HStack(spacing: 7) {
                         Image(systemName: "line.3.horizontal.decrease")
                         Text("Filter")
@@ -460,7 +533,7 @@ struct ProjectCardView: View {
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20, height: 18)
-                                .offset(y: -3)
+                                .offset(y: -5)
                         }
                     }
 
@@ -485,10 +558,23 @@ struct ProjectCardView: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
                         }
-                        .foregroundStyle(stageColor(for: project.currentStage))
+                        .foregroundStyle(stageTextColor(for: project.currentStage))
                         .padding(.vertical, 3)
                         .padding(.horizontal, 7)
                         .background(stageColor(for: project.currentStage).opacity(0.14))
+                        .clipShape(Capsule())
+
+                        HStack(spacing: 3) {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(project.teamSize)
+                                .font(.system(size: 10, weight: .medium))
+                                .tracking(0.3)
+                        }
+                        .foregroundStyle(Color(red: 0.18, green: 0.18, blue: 0.42))
+                        .padding(.vertical, 3)
+                        .padding(.horizontal, 7)
+                        .background(Color.indigo.opacity(0.14))
                         .clipShape(Capsule())
 
                         Spacer()
@@ -582,6 +668,25 @@ struct ProjectCardView: View {
             return .cyan
         }
     }
+
+    private func stageTextColor(for stage: String) -> Color {
+        switch stage {
+        case "Idea":
+            return Color(red: 0.05, green: 0.30, blue: 0.38)
+        case "Research":
+            return Color(red: 0.48, green: 0.24, blue: 0.04)
+        case "Design":
+            return Color(red: 0.28, green: 0.08, blue: 0.42)
+        case "Prototype":
+            return Color(red: 0.52, green: 0.08, blue: 0.28)
+        case "Testing":
+            return Color(red: 0.42, green: 0.28, blue: 0.04)
+        case "Completed":
+            return Color(red: 0.22, green: 0.22, blue: 0.22)
+        default:
+            return Color(red: 0.05, green: 0.30, blue: 0.38)
+        }
+    }
 }
 
 struct TabBarButton: View {
@@ -610,7 +715,9 @@ struct CreateProjectSheetView: View {
     @State private var projectName = ""
     @State private var engineeringField = ""
     @State private var selectedStage = "Idea"
+    @State private var teamSize = "1"
     @State private var isShowingFieldOptions = false
+    @State private var isShowingTeamSizeOptions = false
     @State private var isShowingOtherFieldPrompt = false
     @State private var customEngineeringField = ""
     @State private var validationMessage = ""
@@ -624,6 +731,7 @@ struct CreateProjectSheetView: View {
         _projectName = State(initialValue: projectToEdit?.name ?? "")
         _engineeringField = State(initialValue: projectToEdit?.engineeringField ?? "")
         _selectedStage = State(initialValue: projectToEdit?.currentStage ?? "Idea")
+        _teamSize = State(initialValue: projectToEdit?.teamSize ?? "1")
     }
 
     private let engineeringFields = [
@@ -785,6 +893,75 @@ struct CreateProjectSheetView: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Number of People")
+                    .font(.system(size: 17, weight: .bold))
+
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isShowingTeamSizeOptions.toggle()
+                    }
+                }) {
+                    HStack(spacing: 14) {
+                        Image(systemName: "person.2.fill")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundStyle(.blue)
+
+                        Text(teamSize)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.black)
+                            .rotationEffect(.degrees(isShowingTeamSizeOptions ? 180 : 0))
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(height: 50)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.gray.opacity(0.25), lineWidth: 1.5)
+                    )
+                }
+
+                if isShowingTeamSizeOptions {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(nebulaeTeamSizes, id: \.self) { size in
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    teamSize = size
+                                    isShowingTeamSizeOptions = false
+                                }
+                            }) {
+                                HStack {
+                                    Text(size)
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.primary)
+
+                                    Spacer()
+
+                                    if teamSize == size {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                                .frame(height: 42)
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white.opacity(0.92))
+                            .stroke(Color.gray.opacity(0.20), lineWidth: 1)
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+
             VStack(alignment: .leading, spacing: 12) {
                 Text("Current Stage")
                     .font(.system(size: 17, weight: .bold))
@@ -871,7 +1048,8 @@ struct CreateProjectSheetView: View {
             dateCreated: projectToEdit?.dateCreated ?? Date(),
             lastUpdated: Date(),
             imageData: projectToEdit?.imageData,
-            iconSystemName: projectToEdit?.iconSystemName
+            iconSystemName: projectToEdit?.iconSystemName,
+            teamSize: teamSize
         )
 
         onSaveProject(project)
@@ -953,50 +1131,395 @@ struct CustomFieldSheetView: View {
 struct ProjectDashboardView: View {
     let project: Project
 
-    private let sections = [
-        "Overview",
-        "Research",
-        "Requirements",
-        "Build Logs",
-        "Testing",
-        "Resources",
-        "Portfolio"
+    @State private var selectedStage: String
+
+    init(project: Project) {
+        self.project = project
+        self._selectedStage = State(initialValue: project.currentStage)
+    }
+
+    private struct StageStep {
+        let name: String
+        let displayName: String
+        let icon: String
+    }
+
+    private let stageSteps: [StageStep] = [
+        StageStep(name: "Idea", displayName: "Idea", icon: "lightbulb"),
+        StageStep(name: "Research", displayName: "Research", icon: "magnifyingglass"),
+        StageStep(name: "Design", displayName: "Design", icon: "pencil"),
+        StageStep(name: "Prototype", displayName: "Prototype", icon: "wrench.and.screwdriver"),
+        StageStep(name: "Testing", displayName: "Testing", icon: "flask"),
+        StageStep(name: "Completed", displayName: "Complete", icon: "trophy.fill")
     ]
 
+    private enum TaskStatus {
+        case completed, inProgress, notStarted
+
+        var label: String {
+            switch self {
+            case .completed: return "Completed"
+            case .inProgress: return "In Progress"
+            case .notStarted: return "Not Started"
+            }
+        }
+
+        var textColor: Color {
+            switch self {
+            case .completed: return Color(red: 0.05, green: 0.45, blue: 0.20)
+            case .inProgress: return Color(red: 0.55, green: 0.30, blue: 0.04)
+            case .notStarted: return Color(red: 0.35, green: 0.35, blue: 0.35)
+            }
+        }
+
+        var backgroundColor: Color {
+            switch self {
+            case .completed: return Color.green.opacity(0.16)
+            case .inProgress: return Color.orange.opacity(0.16)
+            case .notStarted: return Color.gray.opacity(0.16)
+            }
+        }
+    }
+
+    private struct TaskItem {
+        let title: String
+        let description: String
+        let icon: String
+        let iconColor: Color
+        let status: TaskStatus
+    }
+
+    private var ideaTasks: [TaskItem] {
+        let teamOrResponsibility: TaskItem
+        if project.teamSize == "1" {
+            teamOrResponsibility = TaskItem(
+                title: "Responsibilities & My Contributions",
+                description: "Document your responsibilities, decisions, and work throughout the project.",
+                icon: "person.fill",
+                iconColor: .orange,
+                status: .notStarted
+            )
+        } else {
+            teamOrResponsibility = TaskItem(
+                title: "Team & Roles",
+                description: "Assign team members and define roles and responsibilities.",
+                icon: "person.2.fill",
+                iconColor: .orange,
+                status: .notStarted
+            )
+        }
+
+        return [
+            TaskItem(title: "Brainstorming", description: "List and explore different ideas and approaches.", icon: "lightbulb.fill", iconColor: .cyan, status: .completed),
+            TaskItem(title: "Problem Statement", description: "Define the problem your project aims to solve.", icon: "doc.text.fill", iconColor: .blue, status: .inProgress),
+            TaskItem(title: "Goals & Objectives", description: "Outline the goals and outcomes of your project.", icon: "target", iconColor: .purple, status: .notStarted),
+            teamOrResponsibility,
+            TaskItem(title: "Project Plan (Overview)", description: "Create a high-level plan and timeline.", icon: "list.bullet.clipboard.fill", iconColor: .green, status: .notStarted)
+        ]
+    }
+
+    private var currentStageIndex: Int {
+        stageSteps.firstIndex(where: { $0.name == project.currentStage }) ?? 0
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(project.name)
-                    .font(.system(size: 32, weight: .bold))
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 18) {
+                heroCard
+                projectProgressCard
+                stageContent
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+        .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+        .navigationTitle("Project")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: {}) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(.black)
+                }
+            }
+        }
+    }
 
-                Text(project.engineeringField)
-                    .font(.system(size: 18, weight: .semibold))
+    private var heroCard: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
+                projectThumbnail
+                    .frame(width: 90, height: 90)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(project.name)
+                        .font(.custom("TimesNewRomanPS-BoldMT", size: 22))
+                        .foregroundStyle(.black)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.82)
+
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(project.engineeringField)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
+                    }
                     .foregroundStyle(.blue)
+                }
 
-                Text("Current Stage: \(project.currentStage)")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                ForEach(sections, id: \.self) { section in
-                    Button(action: {}) {
-                        Text(section)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.black)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 72)
-                            .background(Color.cyan.opacity(0.10))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+            HStack(spacing: 10) {
+                miniInfoCard(title: "Current Stage", icon: "location.fill", value: project.currentStage)
+                miniInfoCard(title: "Last Updated", icon: "calendar", value: friendlyDate(project.lastUpdated))
+            }
+        }
+        .padding(14)
+        .background(Color.cyan.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+
+    @ViewBuilder
+    private var projectThumbnail: some View {
+        if let symbolName = project.iconSystemName {
+            Image(systemName: symbolName)
+                .font(.system(size: 38, weight: .medium))
+                .foregroundStyle(Color(red: 0.06, green: 0.27, blue: 0.40))
+                .frame(width: 90, height: 90)
+                .background(Color.cyan.opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else if let imageData = project.imageData, let uiImage = UIImage(data: imageData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 90, height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        } else {
+            Image(systemName: stepIcon(for: project.currentStage))
+                .font(.system(size: 38, weight: .medium))
+                .foregroundStyle(Color(red: 0.06, green: 0.27, blue: 0.40))
+                .frame(width: 90, height: 90)
+                .background(Color.cyan.opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private func miniInfoCard(title: String, icon: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var projectProgressCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Project Progress")
+                .font(.system(size: 17, weight: .bold))
+
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(stageSteps.indices, id: \.self) { index in
+                    progressStep(index: index)
+                    if index < stageSteps.count - 1 {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.25))
+                            .frame(height: 1.5)
+                            .padding(.top, 16)
                     }
                 }
             }
-
-            Spacer()
         }
-        .padding(24)
-        .navigationTitle("Project")
-        .navigationBarTitleDisplayMode(.inline)
+        .padding(14)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+        )
+    }
+
+    private func progressStep(index: Int) -> some View {
+        let step = stageSteps[index]
+        let isSelected = step.name == selectedStage
+        let activeTint = Color(red: 0.06, green: 0.45, blue: 0.70)
+
+        return Button(action: {
+            selectedStage = step.name
+        }) {
+            VStack(spacing: 5) {
+                ZStack {
+                    Circle()
+                        .fill(isSelected ? Color.cyan.opacity(0.20) : Color.clear)
+                        .frame(width: 34, height: 34)
+                    Circle()
+                        .stroke(
+                            isSelected ? activeTint : Color.gray.opacity(0.30),
+                            lineWidth: 1.5
+                        )
+                        .frame(width: 34, height: 34)
+                    Image(systemName: step.icon)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(
+                            isSelected ? activeTint : Color.gray.opacity(0.55)
+                        )
+                }
+                Text(step.displayName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(isSelected ? .black : .secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(width: 44)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var stageContent: some View {
+        if selectedStage == "Idea" {
+            ideaStageView
+        } else {
+            EmptyView()
+        }
+    }
+
+    private var ideaStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Idea")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Define the problem, brainstorm solutions, and set the foundation for your project.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(ideaTasks.indices, id: \.self) { i in
+                    taskCard(task: ideaTasks[i])
+                }
+            }
+
+            addCustomTaskButton
+        }
+    }
+
+    private func taskCard(task: TaskItem) -> some View {
+        Button(action: {}) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: task.icon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(task.iconColor)
+                    .frame(width: 40, height: 40)
+                    .background(task.iconColor.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(task.title)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.black)
+                        .lineLimit(1)
+                    Text(task.description)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 4)
+
+                statusBadge(task.status)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Color.gray.opacity(0.12), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statusBadge(_ status: TaskStatus) -> some View {
+        HStack(spacing: 4) {
+            if status == .completed {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            Text(status.label)
+                .font(.system(size: 10, weight: .semibold))
+                .lineLimit(1)
+        }
+        .foregroundStyle(status.textColor)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .background(status.backgroundColor)
+        .clipShape(Capsule())
+    }
+
+    private var addCustomTaskButton: some View {
+        Button(action: {}) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .bold))
+                Text("Add Custom Task")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(Color(red: 0.06, green: 0.45, blue: 0.70))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.cyan.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(
+                        Color(red: 0.06, green: 0.45, blue: 0.70).opacity(0.30),
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func stepIcon(for stage: String) -> String {
+        stageSteps.first(where: { $0.name == stage })?.icon ?? "folder"
+    }
+
+    private func friendlyDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        let days = calendar.dateComponents([.day], from: date, to: Date()).day ?? 0
+        if days < 7 { return "\(days)d ago" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: date)
     }
 }
 
@@ -1306,9 +1829,11 @@ struct AddImageSheetView: View {
                 VStack(spacing: 3) {
                     Text("Choose Icon")
                         .font(.system(size: 20, weight: .bold))
+                        .offset(y: +32)
                     Text("Pick a symbol for your project")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
+                        .offset(y: +35)
                 }
 
                 Spacer()
@@ -1353,45 +1878,49 @@ struct AddImageSheetView: View {
                         }
                     }
                 }
-                .padding(.top, 20)
+                .padding(.top, 67)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Preview")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .frame(width: 118, alignment: .center)
+                        .padding(.top, 44)
+                        .offset(x: -3)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: selectedIconSymbol ?? "sparkles")
-                            .font(.system(size: 28, weight: .medium))
+                            .font(.system(size: 20, weight: .medium))
                             .foregroundStyle(Color(red: 0.06, green: 0.27, blue: 0.40))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 54)
+                            .frame(height: 38)
                             .background(Color.cyan.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .clipShape(RoundedRectangle(cornerRadius: 7))
 
                         Text(projectName.isEmpty ? "Project" : projectName)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(.black)
                             .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                            .multilineTextAlignment(.center)
                             .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .center)
 
                         HStack(alignment: .top, spacing: 4) {
                             Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 9, weight: .semibold))
+                                .offset(x: -3)
                             Text(projectEngineeringField.isEmpty ? "Field" : projectEngineeringField)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 9, weight: .medium))
                                 .lineLimit(2)
-                                .multilineTextAlignment(.leading)
+                                .multilineTextAlignment(.center)
                                 .minimumScaleFactor(0.82)
+                                .offset(x: -2, y:1.5)
                         }
                         .foregroundStyle(.blue)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .padding(10)
-                    .frame(width: 118)
+                    .frame(width: 118, height: 121.5)
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(
