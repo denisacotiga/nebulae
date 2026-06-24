@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct Project: Identifiable, Hashable {
     let id: UUID
@@ -7,6 +8,7 @@ struct Project: Identifiable, Hashable {
     let currentStage: String
     let dateCreated: Date
     var lastUpdated: Date
+    var imageData: Data? = nil
 }
 
 struct ContentView: View {
@@ -88,6 +90,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Nebulae")
                     .font(.custom("TimesNewRomanPS-BoldMT", size: 40))
+                    .tracking(1.2)
                     .foregroundStyle(Color(red: 0.20, green: 0.20, blue: 0.20))
                     .shadow(color: Color(red: 0.20, green: 0.20, blue: 0.20), radius: 0, x: 0.5, y: 0)
                     .shadow(color: Color(red: 0.20, green: 0.20, blue: 0.20), radius: 0, x: -0.5, y: 0)
@@ -208,7 +211,7 @@ struct HomeView: View {
             }
 
             Text("\(filteredProjects.count) \(filteredProjects.count == 1 ? "Project" : "Projects")")
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.blue)
 
             VStack(spacing: 14) {
@@ -224,6 +227,11 @@ struct HomeView: View {
                         onDelete: {
                             projects.removeAll { $0.id == project.id }
                             navigationPath.removeAll { $0.id == project.id }
+                        },
+                        onImageSelected: { data in
+                            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                                projects[index].imageData = data
+                            }
                         }
                     )
                 }
@@ -261,44 +269,80 @@ struct ProjectCardView: View {
     let onOpen: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onImageSelected: (Data) -> Void
+
+    @State private var isShowingImageOptions = false
+    @State private var isShowingUploadOptions = false
+    @State private var isShowingPhotosPicker = false
+    @State private var isShowingCamera = false
+    @State private var photosPickerItem: PhotosPickerItem?
 
     var body: some View {
         Button(action: onOpen) {
-            HStack(spacing: 10) {
-                Button(action: {}) {
-                    VStack(spacing: 5) {
-                        Image(systemName: stageIcon(for: project.currentStage))
-                            .font(.system(size: 25, weight: .medium))
-                        Text("Add\nImage/Icon")
-                            .font(.system(size: 10, weight: .semibold))
-                            .multilineTextAlignment(.center)
+            HStack(alignment: .center, spacing: 12) {
+                Button(action: {
+                    isShowingImageOptions = true
+                }) {
+                    Group {
+                        if let imageData = project.imageData, let uiImage = UIImage(data: imageData) {
+                            Image(uiImage: uiImage)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 86, height: 86)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        } else {
+                            VStack(spacing: 4) {
+                                Image(systemName: stageIcon(for: project.currentStage))
+                                    .font(.system(size: 30, weight: .medium))
+                                Text("Add\nImage/Icon")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .multilineTextAlignment(.center)
+                            }
+                            .foregroundStyle(Color.cyan.opacity(0.95))
+                            .frame(width: 86, height: 86)
+                            .background(Color.cyan.opacity(0.10))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
                     }
-                    .foregroundStyle(Color.cyan.opacity(0.95))
-                    .frame(width: 86, height: 86)
-                    .background(Color.cyan.opacity(0.10))
-                    .clipShape(RoundedRectangle(cornerRadius: 15))
                 }
                 .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(project.name)
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(.black)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.78)
-
-                            HStack(spacing: 7) {
-                                Image(systemName: "square.stack.3d.up")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(project.engineeringField)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.82)
-                            }
-                            .foregroundStyle(.blue)
+                .confirmationDialog("Add Image or Icon", isPresented: $isShowingImageOptions, titleVisibility: .visible) {
+                    Button("Upload") { isShowingUploadOptions = true }
+                    Button("Icons") {}
+                    Button("Cancel", role: .cancel) {}
+                }
+                .confirmationDialog("Upload Image", isPresented: $isShowingUploadOptions, titleVisibility: .visible) {
+                    Button("Photo Library") { isShowingPhotosPicker = true }
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button("Take Photo") { isShowingCamera = true }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                }
+                .photosPicker(isPresented: $isShowingPhotosPicker, selection: $photosPickerItem, matching: .images)
+                .onChange(of: photosPickerItem) { _, newItem in
+                    guard let newItem else { return }
+                    Task {
+                        if let data = try? await newItem.loadTransferable(type: Data.self) {
+                            await MainActor.run { onImageSelected(data) }
                         }
+                        await MainActor.run { photosPickerItem = nil }
+                    }
+                }
+                .fullScreenCover(isPresented: $isShowingCamera) {
+                    CameraPicker { data in
+                        if let data { onImageSelected(data) }
+                    }
+                    .ignoresSafeArea()
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .top) {
+                        Text(project.name)
+                            .font(.system(size: 16, weight: .bold))
+                            .tracking(0.3)
+                            .foregroundStyle(.black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
 
                         Spacer()
 
@@ -307,26 +351,37 @@ struct ProjectCardView: View {
                             Button("Delete Project", role: .destructive, action: onDelete)
                         } label: {
                             Image(systemName: "ellipsis")
-                                .font(.system(size: 17, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.secondary)
-                                .frame(width: 22, height: 24)
+                                .frame(width: 20, height: 18)
+                                .offset(y: -3)
                         }
                     }
 
-                    Spacer()
+                    HStack(spacing: 5) {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(project.engineeringField)
+                            .font(.system(size: 10, weight: .medium))
+                            .tracking(0.3)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                    }
+                    .foregroundStyle(.blue)
 
-                    HStack {
-                        HStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        HStack(spacing: 4) {
                             Image(systemName: stageIcon(for: project.currentStage))
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 10, weight: .semibold))
                             Text(project.currentStage)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 10, weight: .medium))
+                                .tracking(0.3)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
                         }
                         .foregroundStyle(stageColor(for: project.currentStage))
-                        .padding(.vertical, 5)
-                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .padding(.horizontal, 7)
                         .background(stageColor(for: project.currentStage).opacity(0.14))
                         .clipShape(Capsule())
 
@@ -334,28 +389,31 @@ struct ProjectCardView: View {
 
                         TimelineView(.periodic(from: .now, by: 60)) { timeline in
                             Text("Updated \(relativeTime(from: project.lastUpdated, to: timeline.date))")
-                                .font(.system(size: 10))
+                                .font(.system(size: 9))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
                         }
+                        .offset(y: 4)
 
                         Button(action: onOpen) {
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(size: 13, weight: .bold))
                                 .foregroundStyle(.black)
-                                .frame(width: 20, height: 24)
+                                .frame(width: 16, height: 18)
+                                .offset(y: 4)
                         }
                         .buttonStyle(.plain)
                     }
+                    .padding(.top, 1)
                 }
             }
-            .padding(13)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
             .frame(maxWidth: .infinity)
-            .frame(height: 132)
-            .background(Color.white.opacity(0.94))
-            .clipShape(RoundedRectangle(cornerRadius: 17))
-            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 3)
         }
         .buttonStyle(.plain)
     }
@@ -409,9 +467,9 @@ struct ProjectCardView: View {
         case "Design":
             return .purple
         case "Prototype":
-            return .green
+            return .pink
         case "Testing":
-            return .blue
+            return Color(red: 0.92, green: 0.70, blue: 0.10)
         case "Completed":
             return .gray
         default:
@@ -705,7 +763,8 @@ struct CreateProjectSheetView: View {
             engineeringField: trimmedField,
             currentStage: selectedStage,
             dateCreated: projectToEdit?.dateCreated ?? Date(),
-            lastUpdated: Date()
+            lastUpdated: Date(),
+            imageData: projectToEdit?.imageData
         )
 
         onSaveProject(project)
@@ -839,6 +898,46 @@ struct ProjectStage: Identifiable {
     let icon: String
 
     var id: String { name }
+}
+
+struct CameraPicker: UIViewControllerRepresentable {
+    let onImage: (Data?) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage)
+    }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (Data?) -> Void
+
+        init(onImage: @escaping (Data?) -> Void) {
+            self.onImage = onImage
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            picker.dismiss(animated: true)
+            if let image = info[.originalImage] as? UIImage,
+               let data = image.jpegData(compressionQuality: 0.85) {
+                onImage(data)
+            } else {
+                onImage(nil)
+            }
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+            onImage(nil)
+        }
+    }
 }
 
 #Preview {
