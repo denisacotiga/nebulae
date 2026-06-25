@@ -166,7 +166,16 @@ struct HomeView: View {
                 .presentationContentInteraction(.scrolls)
             }
             .navigationDestination(for: Project.self) { project in
-                ProjectDashboardView(project: project)
+                ProjectDashboardView(
+                    project: project,
+                    onEdit: {
+                        projectBeingEdited = project
+                    },
+                    onDelete: {
+                        projects.removeAll { $0.id == project.id }
+                        navigationPath.removeAll { $0.id == project.id }
+                    }
+                )
             }
         }
     }
@@ -533,7 +542,7 @@ struct ProjectCardView: View {
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20, height: 18)
-                                .offset(y: -5)
+                                .offset(y: -12)
                         }
                     }
 
@@ -1130,11 +1139,15 @@ struct CustomFieldSheetView: View {
 
 struct ProjectDashboardView: View {
     let project: Project
+    let onEdit: () -> Void
+    let onDelete: () -> Void
 
     @State private var selectedStage: String
 
-    init(project: Project) {
+    init(project: Project, onEdit: @escaping () -> Void, onDelete: @escaping () -> Void) {
         self.project = project
+        self.onEdit = onEdit
+        self.onDelete = onDelete
         self._selectedStage = State(initialValue: project.currentStage)
     }
 
@@ -1193,8 +1206,8 @@ struct ProjectDashboardView: View {
         let teamOrResponsibility: TaskItem
         if project.teamSize == "1" {
             teamOrResponsibility = TaskItem(
-                title: "Responsibilities & My Contributions",
-                description: "Document your responsibilities, decisions, and work throughout the project.",
+                title: "My Contributions",
+                description: "Document your responsibilities, decisions, and work.",
                 icon: "person.fill",
                 iconColor: .orange,
                 status: .notStarted
@@ -1238,7 +1251,10 @@ struct ProjectDashboardView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: {}) {
+                Menu {
+                    Button("Edit", action: onEdit)
+                    Button("Delete Project", role: .destructive, action: onDelete)
+                } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 17, weight: .bold))
                         .foregroundStyle(.black)
@@ -1276,7 +1292,13 @@ struct ProjectDashboardView: View {
 
             HStack(spacing: 10) {
                 miniInfoCard(title: "Current Stage", icon: "location.fill", value: project.currentStage)
-                miniInfoCard(title: "Last Updated", icon: "calendar", value: friendlyDate(project.lastUpdated))
+                TimelineView(.periodic(from: .now, by: 60)) { timeline in
+                    miniInfoCard(
+                        title: "Last Updated",
+                        icon: "calendar",
+                        value: relativeTime(from: project.lastUpdated, to: timeline.date)
+                    )
+                }
             }
         }
         .padding(14)
@@ -1397,10 +1419,217 @@ struct ProjectDashboardView: View {
 
     @ViewBuilder
     private var stageContent: some View {
-        if selectedStage == "Idea" {
+        switch selectedStage {
+        case "Idea":
             ideaStageView
-        } else {
+        case "Research":
+            researchStageView
+        case "Design":
+            designStageView
+        case "Prototype":
+            prototypeStageView
+        case "Testing":
+            testingStageView
+        case "Completed":
+            completeStageView
+        default:
             EmptyView()
+        }
+    }
+
+    private let completeTasks: [TaskItem] = [
+        TaskItem(title: "Final Summary", description: "Write a summary of your completed project.", icon: "doc.text.fill", iconColor: .green, status: .completed),
+        TaskItem(title: "Requirements Review", description: "Compare final results with original goals.", icon: "target", iconColor: .orange, status: .completed),
+        TaskItem(title: "Final Results", description: "Document outcomes and performance.", icon: "chart.bar.fill", iconColor: .blue, status: .inProgress),
+        TaskItem(title: "Demo / Presentation", description: "Showcase your finished project with videos and slides.", icon: "play.rectangle.fill", iconColor: .purple, status: .notStarted),
+        TaskItem(title: "Technical Documentation", description: "Create final guides, instructions, and explanations.", icon: "doc.richtext.fill", iconColor: .cyan, status: .notStarted),
+        TaskItem(title: "Reflection", description: "Record lessons learned and key takeaways.", icon: "lightbulb.fill", iconColor: .orange, status: .inProgress),
+        TaskItem(title: "Future Improvements", description: "Plan upgrades and next steps.", icon: "arrow.up.right.circle.fill", iconColor: .cyan, status: .notStarted),
+        TaskItem(title: "Portfolio Showcase", description: "Create your final project presentation.", icon: "star.fill", iconColor: .pink, status: .notStarted),
+        TaskItem(title: "Final Files", description: "Organize final documents, CAD files, code, and resources.", icon: "folder.fill", iconColor: .red, status: .notStarted),
+        TaskItem(title: "Links & Sharing", description: "Add external links and resources.", icon: "link.circle.fill", iconColor: .purple, status: .notStarted),
+        TaskItem(title: "Achievements", description: "Record awards, recognitions, and milestones.", icon: "trophy.fill", iconColor: .teal, status: .notStarted)
+    ]
+
+    private var completeStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Complete")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Finalize your project, reflect on results, and prepare your portfolio.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(completeTasks.indices, id: \.self) { i in
+                    taskCard(task: completeTasks[i])
+                }
+            }
+
+            generatePortfolioButton
+            addCustomTaskButton
+        }
+    }
+
+    private var generatePortfolioButton: some View {
+        Button(action: {}) {
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 17, weight: .semibold))
+                    Text("Generate Portfolio")
+                        .font(.system(size: 18, weight: .bold))
+                }
+                .foregroundStyle(.white)
+
+                Text("Create a beautiful portfolio from your project")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.88))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.20, green: 0.65, blue: 0.45),
+                        Color(red: 0.50, green: 0.85, blue: 0.60)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private let testingTasks: [TaskItem] = [
+        TaskItem(title: "Testing Plans", description: "Define methods, procedures, and success criteria.", icon: "list.clipboard.fill", iconColor: .cyan, status: .completed),
+        TaskItem(title: "Performance Metrics", description: "Track key measurements and project goals.", icon: "gauge.medium", iconColor: .orange, status: .inProgress),
+        TaskItem(title: "Conditions & Variables", description: "Record testing factors and environmental conditions.", icon: "slider.horizontal.3", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Test Results & Data", description: "Track measurements, results, and observations.", icon: "chart.bar.fill", iconColor: .blue, status: .inProgress),
+        TaskItem(title: "Data Analysis", description: "Analyze results and identify patterns or trends.", icon: "chart.line.uptrend.xyaxis", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Failures & Issues", description: "Document problems found during testing.", icon: "exclamationmark.triangle.fill", iconColor: .red, status: .inProgress),
+        TaskItem(title: "Improvements", description: "Track changes made based on test results.", icon: "lightbulb.fill", iconColor: .cyan, status: .notStarted),
+        TaskItem(title: "Test Iterations", description: "Compare test rounds and track improvements.", icon: "arrow.triangle.2.circlepath", iconColor: .purple, status: .notStarted),
+        TaskItem(title: "User Feedback", description: "Collect feedback and observations from users.", icon: "person.bubble.fill", iconColor: .orange, status: .notStarted),
+        TaskItem(title: "Validation", description: "Confirm requirements and goals were achieved.", icon: "checkmark.shield.fill", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Testing Report", description: "Summarize the testing process, results, and conclusions.", icon: "doc.text.fill", iconColor: .yellow, status: .notStarted)
+    ]
+
+    private var testingStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Testing")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Evaluate performance, analyze results, and improve your solution.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(testingTasks.indices, id: \.self) { i in
+                    taskCard(task: testingTasks[i])
+                }
+            }
+
+            addCustomTaskButton
+        }
+    }
+
+    private let prototypeTasks: [TaskItem] = [
+        TaskItem(title: "Prototype Builds", description: "Track different versions and physical or digital builds.", icon: "wrench.and.screwdriver.fill", iconColor: .teal, status: .completed),
+        TaskItem(title: "Build Logs", description: "Record progress updates, notes, and milestones.", icon: "note.text", iconColor: .orange, status: .inProgress),
+        TaskItem(title: "Tools & Equipment", description: "Document tools, software, and equipment used.", icon: "hammer.fill", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Parts & Assembly", description: "Track components, inventory, and assembly steps.", icon: "puzzlepiece.fill", iconColor: .purple, status: .notStarted),
+        TaskItem(title: "Fabrication / Manufacturing", description: "Document how parts were made or manufactured.", icon: "gearshape.2.fill", iconColor: .pink, status: .notStarted),
+        TaskItem(title: "Code & Software", description: "Track programs, algorithms, and software changes.", icon: "chevron.left.forwardslash.chevron.right", iconColor: .blue, status: .notStarted),
+        TaskItem(title: "Media Documentation", description: "Add photos, videos, and visual progress updates.", icon: "camera.fill", iconColor: .red, status: .notStarted),
+        TaskItem(title: "Problems & Fixes", description: "Record challenges encountered and how you solved them.", icon: "exclamationmark.triangle.fill", iconColor: .orange, status: .notStarted),
+        TaskItem(title: "Prototype Iterations", description: "Compare versions and track changes and improvements.", icon: "arrow.triangle.2.circlepath", iconColor: .cyan, status: .notStarted),
+        TaskItem(title: "Measurements & Observations", description: "Record performance data and observations.", icon: "chart.bar.fill", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Prototype Review", description: "Evaluate the prototype and prepare for testing.", icon: "checkmark.seal.fill", iconColor: .cyan, status: .notStarted)
+    ]
+
+    private var prototypeStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Prototype")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Build, test early versions, and document your development process.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(prototypeTasks.indices, id: \.self) { i in
+                    taskCard(task: prototypeTasks[i])
+                }
+            }
+
+            addCustomTaskButton
+        }
+    }
+
+    private let designTasks: [TaskItem] = [
+        TaskItem(title: "Concept Sketches", description: "Sketch and visualize your initial ideas and concepts.", icon: "pencil.and.scribble", iconColor: .orange, status: .completed),
+        TaskItem(title: "CAD Models & Drawings", description: "Create 3D models and technical drawings.", icon: "cube.fill", iconColor: .purple, status: .inProgress),
+        TaskItem(title: "System Architecture", description: "Map out the components and how they work together.", icon: "rectangle.3.group.fill", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Materials & Components", description: "Choose materials and list necessary components.", icon: "square.grid.3x3.fill", iconColor: .cyan, status: .notStarted),
+        TaskItem(title: "Design Requirements / Specifications", description: "Define measurements, features, and performance targets.", icon: "target", iconColor: .pink, status: .notStarted),
+        TaskItem(title: "Calculations & Analysis", description: "Perform calculations, simulations, and analysis.", icon: "function", iconColor: .blue, status: .notStarted),
+        TaskItem(title: "Iterations", description: "Track design changes and improvements over time.", icon: "arrow.triangle.2.circlepath", iconColor: .purple, status: .notStarted),
+        TaskItem(title: "Design Decisions / Trade-offs", description: "Explain choices made and compare options considered.", icon: "arrow.triangle.branch", iconColor: .orange, status: .notStarted),
+        TaskItem(title: "Design Review", description: "Get feedback from peers before prototyping.", icon: "checkmark.bubble.fill", iconColor: .teal, status: .notStarted)
+    ]
+
+    private var designStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Design")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Plan, create, and refine your solution before prototyping.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(designTasks.indices, id: \.self) { i in
+                    taskCard(task: designTasks[i])
+                }
+            }
+
+            addCustomTaskButton
+        }
+    }
+
+    private let researchTasks: [TaskItem] = [
+        TaskItem(title: "Background Research", description: "Learn concepts, principles, and relevant information.", icon: "book.fill", iconColor: .purple, status: .completed),
+        TaskItem(title: "Existing Solutions", description: "Analyze current designs and identify improvements.", icon: "magnifyingglass", iconColor: .orange, status: .inProgress),
+        TaskItem(title: "Key Questions", description: "Track important questions and discoveries.", icon: "questionmark.circle.fill", iconColor: .yellow, status: .notStarted),
+        TaskItem(title: "Sources & References", description: "Save articles, papers, videos, and other resources.", icon: "bookmark.fill", iconColor: .pink, status: .notStarted),
+        TaskItem(title: "Constraints & Requirements", description: "Identify limits, needs, and design criteria.", icon: "exclamationmark.triangle.fill", iconColor: .green, status: .notStarted),
+        TaskItem(title: "Research Notes", description: "Document findings, comparisons, and observations.", icon: "note.text", iconColor: .cyan, status: .notStarted)
+    ]
+
+    private var researchStageView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Research")
+                    .font(.system(size: 22, weight: .bold))
+                Text("Explore existing solutions, gather information, and prepare for design.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(researchTasks.indices, id: \.self) { i in
+                    taskCard(task: researchTasks[i])
+                }
+            }
+
+            addCustomTaskButton
         }
     }
 
@@ -1520,6 +1749,17 @@ struct ProjectDashboardView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         return formatter.string(from: date)
+    }
+
+    private func relativeTime(from date: Date, to currentDate: Date) -> String {
+        let seconds = max(0, Int(currentDate.timeIntervalSince(date)))
+        if seconds < 60 { return "Just now" }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m ago" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h ago" }
+        let days = hours / 24
+        return "\(days)d ago"
     }
 }
 
