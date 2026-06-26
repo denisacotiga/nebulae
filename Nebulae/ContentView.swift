@@ -558,7 +558,8 @@ struct ProjectCardView: View {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(.secondary)
-                                .frame(width: 20, height: 18)
+                                .frame(width: 32, height: 22)
+                                .contentShape(Rectangle())
                                 .offset(y: -12)
                         }
                     }
@@ -573,6 +574,7 @@ struct ProjectCardView: View {
                             .minimumScaleFactor(0.82)
                     }
                     .foregroundStyle(.blue)
+                    .offset(y: -3)
 
                     HStack(spacing: 6) {
                         HStack(spacing: 4) {
