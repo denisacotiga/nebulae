@@ -167,13 +167,30 @@ struct HomeView: View {
             }
             .navigationDestination(for: Project.self) { project in
                 ProjectDashboardView(
-                    project: project,
+                    projects: $projects,
+                    projectID: project.id,
                     onEdit: {
-                        projectBeingEdited = project
+                        if let latest = projects.first(where: { $0.id == project.id }) {
+                            projectBeingEdited = latest
+                        } else {
+                            projectBeingEdited = project
+                        }
                     },
                     onDelete: {
                         projects.removeAll { $0.id == project.id }
                         navigationPath.removeAll { $0.id == project.id }
+                    },
+                    onImageSelected: { data in
+                        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                            projects[index].imageData = data
+                            projects[index].iconSystemName = nil
+                        }
+                    },
+                    onIconSelected: { symbol in
+                        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                            projects[index].iconSystemName = symbol
+                            projects[index].imageData = nil
+                        }
                     }
                 )
             }
@@ -1138,17 +1155,53 @@ struct CustomFieldSheetView: View {
 }
 
 struct ProjectDashboardView: View {
-    let project: Project
+    @Binding var projects: [Project]
+    let projectID: UUID
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onImageSelected: (Data) -> Void
+    let onIconSelected: (String) -> Void
 
     @State private var selectedStage: String
 
-    init(project: Project, onEdit: @escaping () -> Void, onDelete: @escaping () -> Void) {
-        self.project = project
+    @State private var isShowingAddImageSheet = false
+    @State private var isShowingPhotosPicker = false
+    @State private var isShowingCamera = false
+    @State private var isShowingFilePicker = false
+    @State private var photosPickerItem: PhotosPickerItem?
+    @State private var pendingPickerAction: ThumbnailPickerAction?
+
+    enum ThumbnailPickerAction {
+        case photoLibrary, camera, file
+    }
+
+    private var project: Project {
+        projects.first(where: { $0.id == projectID }) ?? Project(
+            id: projectID,
+            name: "",
+            engineeringField: "",
+            currentStage: "Idea",
+            dateCreated: Date(),
+            lastUpdated: Date()
+        )
+    }
+
+    init(
+        projects: Binding<[Project]>,
+        projectID: UUID,
+        onEdit: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
+        onImageSelected: @escaping (Data) -> Void,
+        onIconSelected: @escaping (String) -> Void
+    ) {
+        self._projects = projects
+        self.projectID = projectID
         self.onEdit = onEdit
         self.onDelete = onDelete
-        self._selectedStage = State(initialValue: project.currentStage)
+        self.onImageSelected = onImageSelected
+        self.onIconSelected = onIconSelected
+        let initialStage = projects.wrappedValue.first(where: { $0.id == projectID })?.currentStage ?? "Idea"
+        self._selectedStage = State(initialValue: initialStage)
     }
 
     private struct StageStep {
@@ -1266,8 +1319,76 @@ struct ProjectDashboardView: View {
     private var heroCard: some View {
         VStack(spacing: 12) {
             HStack(alignment: .center, spacing: 14) {
-                projectThumbnail
-                    .frame(width: 90, height: 90)
+                Button(action: {
+                    isShowingAddImageSheet = true
+                }) {
+                    projectThumbnail
+                        .frame(width: 90, height: 90)
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $isShowingAddImageSheet) {
+                    AddImageSheetView(
+                        projectName: project.name,
+                        projectEngineeringField: project.engineeringField,
+                        onPhotoLibrary: {
+                            pendingPickerAction = .photoLibrary
+                            isShowingAddImageSheet = false
+                        },
+                        onTakePhoto: {
+                            pendingPickerAction = .camera
+                            isShowingAddImageSheet = false
+                        },
+                        onChooseFile: {
+                            pendingPickerAction = .file
+                            isShowingAddImageSheet = false
+                        },
+                        onIconSelected: { symbol in
+                            onIconSelected(symbol)
+                            isShowingAddImageSheet = false
+                        }
+                    )
+                    .presentationDetents([.height(640), .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(28)
+                    .presentationBackground(.thickMaterial)
+                }
+                .onChange(of: isShowingAddImageSheet) { _, isShown in
+                    guard !isShown, let action = pendingPickerAction else { return }
+                    pendingPickerAction = nil
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                        switch action {
+                        case .photoLibrary: isShowingPhotosPicker = true
+                        case .camera: isShowingCamera = true
+                        case .file: isShowingFilePicker = true
+                        }
+                    }
+                }
+                .photosPicker(isPresented: $isShowingPhotosPicker, selection: $photosPickerItem, matching: .images)
+                .onChange(of: photosPickerItem) { _, newItem in
+                    guard let newItem else { return }
+                    Task {
+                        if let data = try? await newItem.loadTransferable(type: Data.self) {
+                            await MainActor.run { onImageSelected(data) }
+                        }
+                        await MainActor.run { photosPickerItem = nil }
+                    }
+                }
+                .fullScreenCover(isPresented: $isShowingCamera) {
+                    CameraPicker { data in
+                        if let data { onImageSelected(data) }
+                    }
+                    .ignoresSafeArea()
+                }
+                .fileImporter(isPresented: $isShowingFilePicker, allowedContentTypes: [.image]) { result in
+                    if case .success(let url) = result {
+                        let accessing = url.startAccessingSecurityScopedResource()
+                        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                        if let data = try? Data(contentsOf: url) {
+                            onImageSelected(data)
+                        }
+                    }
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(project.name)
@@ -2128,36 +2249,26 @@ struct AddImageSheetView: View {
                         .padding(.top, 44)
                         .offset(x: -3)
 
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Image(systemName: selectedIconSymbol ?? "sparkles")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 30, weight: .medium))
                             .foregroundStyle(Color(red: 0.06, green: 0.27, blue: 0.40))
                             .frame(maxWidth: .infinity)
-                            .frame(height: 38)
+                            .frame(height: 66)
                             .background(Color.cyan.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Spacer(minLength: 4)
 
                         Text(projectName.isEmpty ? "Project" : projectName)
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(.black)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
                             .minimumScaleFactor(0.82)
                             .frame(maxWidth: .infinity, alignment: .center)
 
-                        HStack(alignment: .top, spacing: 4) {
-                            Image(systemName: "square.stack.3d.up")
-                                .font(.system(size: 9, weight: .semibold))
-                                .offset(x: -3)
-                            Text(projectEngineeringField.isEmpty ? "Field" : projectEngineeringField)
-                                .font(.system(size: 9, weight: .medium))
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                                .minimumScaleFactor(0.82)
-                                .offset(x: -2, y:1.5)
-                        }
-                        .foregroundStyle(.blue)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                        Spacer(minLength: 4)
                     }
                     .padding(10)
                     .frame(width: 118, height: 121.5)
