@@ -12,7 +12,133 @@ struct Project: Identifiable, Hashable {
     var imageData: Data? = nil
     var iconSystemName: String? = nil
     var teamSize: String = "1"
+    var skippedTaskTitles: Set<String> = []
+    var brainstorming: BrainstormingData? = nil
+    var problemStatement: ProblemStatementData? = nil
 }
+
+struct ProblemStatementData: Hashable {
+    var problemSummary: String = ""
+    var background: String = ""
+    var affectedGroups: Set<String> = []
+    var affectedGroupOther: String = ""
+    var currentSolutions: String = ""
+    var limitations: String = ""
+    var rootCause: String = ""
+    var supportingResearch: [ResearchSource] = []
+    var successCriteria: [SuccessCriterion] = []
+    var constraints: Set<String> = []
+    var constraintOther: String = ""
+    var finalProblemStatement: String = ""
+    var whyThisMattersExpanded: Bool = true
+    var isComplete: Bool = false
+}
+
+struct SuccessCriterion: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = ""
+    var summary: String = ""
+}
+
+let nebulaeAffectedGroups: [String] = [
+    "Students", "Engineers", "Researchers", "Businesses",
+    "Healthcare", "Environment", "Government", "Communities", "Other"
+]
+
+let nebulaeConstraints: [String] = [
+    "Budget", "Time", "Materials", "Weight", "Power",
+    "Safety", "Manufacturing", "Environmental", "Regulations", "Other"
+]
+
+struct BrainstormingData: Hashable {
+    var projectInspiration: String = ""
+    var initialIdea: String = ""
+    var alternativeIdeas: [AlternativeIdea] = []
+    var brainstormingMethods: Set<String> = []
+    var freeWritingText: String = ""
+    var mindMapDescription: String = ""
+    var whiteboardSummary: String = ""
+    var stickyNotes: [StickyNote] = []
+    var discussion: DiscussionData = DiscussionData()
+    var aiBrainstorming: AIBrainstormingData = AIBrainstormingData()
+    var researchFirst: ResearchFirstData = ResearchFirstData()
+    var otherMethodDescription: String = ""
+    var inspirationSources: [InspirationSource] = []
+    var keyQuestions: String = ""
+    var predictedChallenges: String = ""
+    var finalSelectedIdea: String = ""
+    var reflection: String = ""
+    var isComplete: Bool = false
+}
+
+struct StickyNote: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = ""
+    var description: String = ""
+    var category: String = ""
+    var priority: String = ""
+}
+
+struct DiscussionData: Hashable {
+    var participants: [DiscussionParticipant] = []
+    var summary: String = ""
+    var keyTakeaways: String = ""
+}
+
+struct DiscussionParticipant: Identifiable, Hashable {
+    var id = UUID()
+    var name: String = ""
+    var role: String = ""
+}
+
+struct AIBrainstormingData: Hashable {
+    var aiTool: String = ""
+    var prompt: String = ""
+    var responseSummary: String = ""
+    var reflection: String = ""
+}
+
+struct ResearchFirstData: Hashable {
+    var sources: [ResearchSource] = []
+    var mainFindings: String = ""
+    var howChangedIdea: String = ""
+}
+
+struct ResearchSource: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = ""
+    var link: String = ""
+    var notes: String = ""
+}
+
+let nebulaeAITools: [String] = [
+    "ChatGPT", "Claude", "Gemini", "Copilot", "Perplexity", "Other"
+]
+
+struct AlternativeIdea: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = ""
+    var summary: String = ""
+    var pros: String = ""
+    var cons: String = ""
+}
+
+struct InspirationSource: Identifiable, Hashable {
+    var id = UUID()
+    var title: String = ""
+    var type: String = "Website"
+    var link: String = ""
+    var notes: String = ""
+}
+
+let nebulaeBrainstormingMethods: [String] = [
+    "Free Writing", "Mind Map", "Whiteboard", "Sticky Notes",
+    "Discussion", "AI Brainstorming", "Research First", "Other"
+]
+
+let nebulaeSourceTypes: [String] = [
+    "Website", "Video", "Book", "Person", "Research Paper", "Other"
+]
 
 let nebulaeTeamSizes: [String] = ["1", "2", "3", "4", "5+"]
 
@@ -1077,7 +1203,10 @@ struct CreateProjectSheetView: View {
             lastUpdated: Date(),
             imageData: projectToEdit?.imageData,
             iconSystemName: projectToEdit?.iconSystemName,
-            teamSize: teamSize
+            teamSize: teamSize,
+            skippedTaskTitles: projectToEdit?.skippedTaskTitles ?? [],
+            brainstorming: projectToEdit?.brainstorming,
+            problemStatement: projectToEdit?.problemStatement
         )
 
         onSaveProject(project)
@@ -1173,8 +1302,22 @@ struct ProjectDashboardView: View {
     @State private var photosPickerItem: PhotosPickerItem?
     @State private var pendingPickerAction: ThumbnailPickerAction?
 
+    @State private var isShowingBrainstormingIntro = false
+    @State private var isShowingBrainstormingSheet = false
+    @State private var isShowingSkipConfirmation = false
+    @State private var pendingBrainstormingAction: BrainstormingAction?
+
+    @State private var isShowingProblemStatementIntro = false
+    @State private var isShowingProblemStatementSheet = false
+    @State private var isShowingProblemStatementSkipConfirmation = false
+    @State private var pendingProblemStatementAction: BrainstormingAction?
+
     enum ThumbnailPickerAction {
         case photoLibrary, camera, file
+    }
+
+    enum BrainstormingAction {
+        case openSheet, showSkipConfirm
     }
 
     private var project: Project {
@@ -1222,13 +1365,14 @@ struct ProjectDashboardView: View {
     ]
 
     private enum TaskStatus {
-        case completed, inProgress, notStarted
+        case completed, inProgress, notStarted, skipped
 
         var label: String {
             switch self {
             case .completed: return "Completed"
             case .inProgress: return "In Progress"
             case .notStarted: return "Not Started"
+            case .skipped: return "Skipped"
             }
         }
 
@@ -1237,6 +1381,7 @@ struct ProjectDashboardView: View {
             case .completed: return Color(red: 0.05, green: 0.45, blue: 0.20)
             case .inProgress: return Color(red: 0.55, green: 0.30, blue: 0.04)
             case .notStarted: return Color(red: 0.35, green: 0.35, blue: 0.35)
+            case .skipped: return Color(red: 0.30, green: 0.30, blue: 0.30)
             }
         }
 
@@ -1245,6 +1390,7 @@ struct ProjectDashboardView: View {
             case .completed: return Color.green.opacity(0.16)
             case .inProgress: return Color.orange.opacity(0.16)
             case .notStarted: return Color.gray.opacity(0.16)
+            case .skipped: return Color.gray.opacity(0.22)
             }
         }
     }
@@ -1255,6 +1401,26 @@ struct ProjectDashboardView: View {
         let icon: String
         let iconColor: Color
         let status: TaskStatus
+    }
+
+    private var brainstormingStatus: TaskStatus {
+        if project.skippedTaskTitles.contains("Brainstorming") {
+            return .skipped
+        }
+        if let bd = project.brainstorming {
+            return bd.isComplete ? .completed : .inProgress
+        }
+        return .notStarted
+    }
+
+    private var problemStatementStatus: TaskStatus {
+        if project.skippedTaskTitles.contains("Problem Statement") {
+            return .skipped
+        }
+        if let ps = project.problemStatement {
+            return ps.isComplete ? .completed : .inProgress
+        }
+        return .notStarted
     }
 
     private var ideaTasks: [TaskItem] {
@@ -1278,8 +1444,8 @@ struct ProjectDashboardView: View {
         }
 
         return [
-            TaskItem(title: "Brainstorming", description: "List and explore different ideas and approaches.", icon: "lightbulb.fill", iconColor: .cyan, status: .completed),
-            TaskItem(title: "Problem Statement", description: "Define the problem your project aims to solve.", icon: "doc.text.fill", iconColor: .blue, status: .inProgress),
+            TaskItem(title: "Brainstorming", description: "List and explore different ideas and approaches.", icon: "lightbulb.fill", iconColor: .cyan, status: brainstormingStatus),
+            TaskItem(title: "Problem Statement", description: "Define the problem your project aims to solve.", icon: "doc.text.fill", iconColor: .blue, status: problemStatementStatus),
             TaskItem(title: "Goals & Objectives", description: "Outline the goals and outcomes of your project.", icon: "target", iconColor: .purple, status: .notStarted),
             teamOrResponsibility,
             TaskItem(title: "Project Plan (Overview)", description: "Create a high-level plan and timeline.", icon: "list.bullet.clipboard.fill", iconColor: .green, status: .notStarted)
@@ -1316,6 +1482,131 @@ struct ProjectDashboardView: View {
                 }
             }
         }
+        .sheet(isPresented: $isShowingBrainstormingIntro) {
+            BrainstormingIntroSheet(
+                onContinue: {
+                    pendingBrainstormingAction = .openSheet
+                    isShowingBrainstormingIntro = false
+                },
+                onSkip: {
+                    pendingBrainstormingAction = .showSkipConfirm
+                    isShowingBrainstormingIntro = false
+                }
+            )
+            .presentationDetents([.height(470)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+            .presentationBackground(.thickMaterial)
+        }
+        .onChange(of: isShowingBrainstormingIntro) { _, isShown in
+            guard !isShown, let action = pendingBrainstormingAction else { return }
+            pendingBrainstormingAction = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                switch action {
+                case .openSheet: isShowingBrainstormingSheet = true
+                case .showSkipConfirm: isShowingSkipConfirmation = true
+                }
+            }
+        }
+        .alert("Skip Brainstorming?", isPresented: $isShowingSkipConfirmation) {
+            Button("Go Back", role: .cancel) { }
+            Button("Skip Section", role: .destructive) { skipBrainstorming() }
+        } message: {
+            Text("This section will be marked as Skipped. You can return and complete it whenever you'd like.")
+        }
+        .sheet(isPresented: $isShowingBrainstormingSheet) {
+            BrainstormingSheetView(
+                existing: project.brainstorming,
+                onSaveDraft: { data in saveBrainstorming(data, isComplete: false) },
+                onComplete: { data in saveBrainstorming(data, isComplete: true) }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+        }
+        .sheet(isPresented: $isShowingProblemStatementIntro) {
+            SectionIntroSheet(
+                title: "Problem Statement",
+                iconName: "doc.text.fill",
+                iconTint: .blue,
+                iconBackground: Color.blue.opacity(0.16),
+                description: "Clearly defining the problem you're solving is the foundation of great engineering. It keeps your project focused and helps you evaluate whether your final solution actually works. You can skip this section and revisit it later.",
+                onContinue: {
+                    pendingProblemStatementAction = .openSheet
+                    isShowingProblemStatementIntro = false
+                },
+                onSkip: {
+                    pendingProblemStatementAction = .showSkipConfirm
+                    isShowingProblemStatementIntro = false
+                }
+            )
+            .presentationDetents([.height(470)])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+            .presentationBackground(.thickMaterial)
+        }
+        .onChange(of: isShowingProblemStatementIntro) { _, isShown in
+            guard !isShown, let action = pendingProblemStatementAction else { return }
+            pendingProblemStatementAction = nil
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                switch action {
+                case .openSheet: isShowingProblemStatementSheet = true
+                case .showSkipConfirm: isShowingProblemStatementSkipConfirmation = true
+                }
+            }
+        }
+        .alert("Skip Problem Statement?", isPresented: $isShowingProblemStatementSkipConfirmation) {
+            Button("Go Back", role: .cancel) { }
+            Button("Skip Section", role: .destructive) { skipProblemStatement() }
+        } message: {
+            Text("This section will be marked as Skipped. You can return and complete it whenever you'd like.")
+        }
+        .sheet(isPresented: $isShowingProblemStatementSheet) {
+            ProblemStatementSheetView(
+                existing: project.problemStatement,
+                onSaveDraft: { data in saveProblemStatement(data, isComplete: false) },
+                onComplete: { data in saveProblemStatement(data, isComplete: true) }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .presentationCornerRadius(28)
+        }
+    }
+
+    private func saveProblemStatement(_ data: ProblemStatementData, isComplete: Bool) {
+        guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        var updated = data
+        updated.isComplete = isComplete
+        projects[index].problemStatement = updated
+        projects[index].skippedTaskTitles.remove("Problem Statement")
+        projects[index].lastUpdated = Date()
+        isShowingProblemStatementSheet = false
+    }
+
+    private func skipProblemStatement() {
+        guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        projects[index].skippedTaskTitles.insert("Problem Statement")
+        projects[index].problemStatement = nil
+        projects[index].lastUpdated = Date()
+    }
+
+    private func saveBrainstorming(_ data: BrainstormingData, isComplete: Bool) {
+        guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        var updated = data
+        updated.isComplete = isComplete
+        projects[index].brainstorming = updated
+        projects[index].skippedTaskTitles.remove("Brainstorming")
+        projects[index].lastUpdated = Date()
+        isShowingBrainstormingSheet = false
+    }
+
+    private func skipBrainstorming() {
+        guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        projects[index].skippedTaskTitles.insert("Brainstorming")
+        projects[index].brainstorming = nil
+        projects[index].lastUpdated = Date()
     }
 
     private var heroCard: some View {
@@ -1768,7 +2059,14 @@ struct ProjectDashboardView: View {
 
             VStack(spacing: 10) {
                 ForEach(ideaTasks.indices, id: \.self) { i in
-                    taskCard(task: ideaTasks[i])
+                    let task = ideaTasks[i]
+                    taskCard(task: task) {
+                        if task.title == "Brainstorming" {
+                            isShowingBrainstormingIntro = true
+                        } else if task.title == "Problem Statement" {
+                            isShowingProblemStatementIntro = true
+                        }
+                    }
                 }
             }
 
@@ -1776,8 +2074,8 @@ struct ProjectDashboardView: View {
         }
     }
 
-    private func taskCard(task: TaskItem) -> some View {
-        Button(action: {}) {
+    private func taskCard(task: TaskItem, action: @escaping () -> Void = {}) -> some View {
+        Button(action: action) {
             HStack(alignment: .center, spacing: 12) {
                 Image(systemName: task.icon)
                     .font(.system(size: 18, weight: .medium))
@@ -2358,6 +2656,1624 @@ struct AddImageSheetView: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct BrainstormingIntroSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onContinue: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack {
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.black)
+                }
+            }
+
+            VStack(spacing: 14) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .frame(width: 78, height: 78)
+                    .background(Color.orange.opacity(0.16))
+                    .clipShape(Circle())
+
+                Text("Brainstorming")
+                    .font(.system(size: 24, weight: .bold))
+
+                Text("Every project begins differently. If brainstorming was part of your process, you can document it here. If not, you can skip this section and continue with your project. You can always come back later.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 10) {
+                Button(action: onContinue) {
+                    Text("Continue")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(red: 0.20, green: 0.55, blue: 0.90))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+
+                Button(action: onSkip) {
+                    Text("Skip Section")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.30, green: 0.30, blue: 0.30))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color.gray.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                        )
+                }
+            }
+
+            Text("Skipping this section won't affect your project. You can enable it again anytime.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 20)
+    }
+}
+
+struct BrainstormingSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var data: BrainstormingData
+    @State private var isMethodDropdownOpen = false
+
+    let onSaveDraft: (BrainstormingData) -> Void
+    let onComplete: (BrainstormingData) -> Void
+
+    init(
+        existing: BrainstormingData?,
+        onSaveDraft: @escaping (BrainstormingData) -> Void,
+        onComplete: @escaping (BrainstormingData) -> Void
+    ) {
+        self._data = State(initialValue: existing ?? BrainstormingData())
+        self.onSaveDraft = onSaveDraft
+        self.onComplete = onComplete
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+
+                    textBlock(
+                        title: "Project Inspiration",
+                        placeholder: "What inspired this project? What problem or opportunity made you start?",
+                        text: $data.projectInspiration
+                    )
+
+                    textBlock(
+                        title: "Initial Idea",
+                        placeholder: "Describe your original concept before you began researching.",
+                        text: $data.initialIdea
+                    )
+
+                    alternativeIdeasBlock
+
+                    methodDropdown
+
+                    inspirationSourcesBlock
+
+                    textBlock(
+                        title: "Key Questions",
+                        placeholder: "What questions did you need to answer before moving forward?",
+                        text: $data.keyQuestions
+                    )
+
+                    textBlock(
+                        title: "Predicted Challenges",
+                        placeholder: "What obstacles or risks did you anticipate?",
+                        text: $data.predictedChallenges
+                    )
+
+                    textBlock(
+                        title: "Final Selected Idea",
+                        placeholder: "Explain the idea you ultimately decided to pursue and why.",
+                        text: $data.finalSelectedIdea
+                    )
+
+                    attachmentsBlock
+
+                    textBlock(
+                        title: "Reflection",
+                        placeholder: "Looking back, would you brainstorm differently?",
+                        text: $data.reflection,
+                        isOptional: true
+                    )
+
+                    bottomActions
+                }
+                .padding(20)
+            }
+            .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+            .navigationTitle("Brainstorming")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lightbulb.fill")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(.orange)
+                .frame(width: 46, height: 46)
+                .background(Color.orange.opacity(0.16))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Brainstorming")
+                    .font(.system(size: 20, weight: .bold))
+                Text("Capture how the idea took shape.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+    }
+
+    private func textBlock(
+        title: String,
+        placeholder: String,
+        text: Binding<String>,
+        isOptional: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                if isOptional {
+                    Text("Optional")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color.gray.opacity(0.14))
+                        .clipShape(Capsule())
+                }
+            }
+
+            ZStack(alignment: .topLeading) {
+                if text.wrappedValue.isEmpty {
+                    Text(placeholder)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                }
+                TextField("", text: text, axis: .vertical)
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .lineLimit(3...8)
+            }
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+            )
+        }
+    }
+
+    private var alternativeIdeasBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Alternative Ideas")
+                    .font(.system(size: 15, weight: .bold))
+                Text("Optional")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.gray.opacity(0.14))
+                    .clipShape(Capsule())
+                Spacer()
+                Button(action: {
+                    data.alternativeIdeas.append(AlternativeIdea())
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Add")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                }
+            }
+
+            if data.alternativeIdeas.isEmpty {
+                Text("Add ideas you considered but chose not to pursue.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
+            } else {
+                ForEach($data.alternativeIdeas) { $idea in
+                    alternativeIdeaCard(idea: $idea)
+                }
+            }
+        }
+    }
+
+    private func alternativeIdeaCard(idea: Binding<AlternativeIdea>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Idea title", text: idea.title)
+                    .font(.system(size: 14, weight: .semibold))
+                Button(action: {
+                    data.alternativeIdeas.removeAll { $0.id == idea.wrappedValue.id }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.red)
+                }
+            }
+
+            TextField("Description", text: idea.summary, axis: .vertical)
+                .font(.system(size: 13))
+                .lineLimit(2...4)
+
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Pros")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.green)
+                    TextField("Pros", text: idea.pros, axis: .vertical)
+                        .font(.system(size: 12))
+                        .lineLimit(1...3)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.green.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Cons")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.red)
+                    TextField("Cons", text: idea.cons, axis: .vertical)
+                        .font(.system(size: 12))
+                        .lineLimit(1...3)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.red.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(12)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var methodDropdown: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("How did you brainstorm?")
+                .font(.system(size: 15, weight: .bold))
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 110), spacing: 8)],
+                spacing: 8
+            ) {
+                ForEach(nebulaeBrainstormingMethods, id: \.self) { method in
+                    methodChip(method: method)
+                }
+            }
+
+            VStack(spacing: 12) {
+                if data.brainstormingMethods.contains("Free Writing") {
+                    freeWritingSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Mind Map") {
+                    mindMapSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Whiteboard") {
+                    whiteboardSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Sticky Notes") {
+                    stickyNotesSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Discussion") {
+                    discussionSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("AI Brainstorming") {
+                    aiBrainstormingSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Research First") {
+                    researchFirstSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if data.brainstormingMethods.contains("Other") {
+                    otherMethodSection
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: data.brainstormingMethods)
+        }
+    }
+
+    private func methodChip(method: String) -> some View {
+        let isSelected = data.brainstormingMethods.contains(method)
+        return Button(action: {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if isSelected {
+                    data.brainstormingMethods.remove(method)
+                } else {
+                    data.brainstormingMethods.insert(method)
+                }
+            }
+        }) {
+            HStack(spacing: 5) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                Text(method)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .foregroundStyle(isSelected ? .white : Color(red: 0.25, green: 0.25, blue: 0.25))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(
+                isSelected
+                    ? Color(red: 0.20, green: 0.55, blue: 0.90)
+                    : Color.gray.opacity(0.12)
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var inspirationSourcesBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Inspiration Sources")
+                    .font(.system(size: 15, weight: .bold))
+                Text("Optional")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.gray.opacity(0.14))
+                    .clipShape(Capsule())
+                Spacer()
+                Button(action: {
+                    data.inspirationSources.append(InspirationSource())
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Add")
+                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                }
+            }
+
+            if data.inspirationSources.isEmpty {
+                Text("Save articles, videos, papers, or people that inspired you.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    )
+            } else {
+                ForEach($data.inspirationSources) { $source in
+                    inspirationSourceCard(source: $source)
+                }
+            }
+        }
+    }
+
+    private func inspirationSourceCard(source: Binding<InspirationSource>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Source title", text: source.title)
+                    .font(.system(size: 14, weight: .semibold))
+                Button(action: {
+                    data.inspirationSources.removeAll { $0.id == source.wrappedValue.id }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.red)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Picker("Type", selection: source.type) {
+                    ForEach(nebulaeSourceTypes, id: \.self) { type in
+                        Text(type).tag(type)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.blue)
+
+                Spacer()
+            }
+
+            TextField("Link (optional)", text: source.link)
+                .font(.system(size: 13))
+                .autocapitalization(.none)
+                .autocorrectionDisabled()
+
+            TextField("Notes", text: source.notes, axis: .vertical)
+                .font(.system(size: 13))
+                .lineLimit(1...4)
+        }
+        .padding(12)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func methodCard<Content: View>(
+        title: String,
+        icon: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+            }
+            content()
+        }
+        .padding(14)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private func multilineField(
+        placeholder: String,
+        text: Binding<String>,
+        lineLimit: ClosedRange<Int> = 3...8
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            if text.wrappedValue.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+            }
+            TextField("", text: text, axis: .vertical)
+                .font(.system(size: 14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .lineLimit(lineLimit)
+        }
+        .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.gray.opacity(0.16), lineWidth: 1)
+        )
+    }
+
+    private func inlineTextField(placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .font(.system(size: 13))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.gray.opacity(0.16), lineWidth: 1)
+            )
+    }
+
+    private func uploadButton(label: String, icon: String) -> some View {
+        Button(action: {}) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color.blue.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var freeWritingSection: some View {
+        methodCard(title: "Free Writing", icon: "pencil.tip") {
+            multilineField(
+                placeholder: "Write down your ideas, thoughts, or anything that came to mind during brainstorming.",
+                text: $data.freeWritingText
+            )
+            HStack(spacing: 8) {
+                uploadButton(label: "Upload handwritten notes", icon: "doc.text")
+                uploadButton(label: "Upload document", icon: "paperclip")
+            }
+        }
+    }
+
+    private var mindMapSection: some View {
+        methodCard(title: "Mind Map", icon: "point.3.filled.connected.trianglepath.dotted") {
+            Text("Upload your mind map or describe how it helped organize your ideas.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                uploadButton(label: "Image", icon: "photo")
+                uploadButton(label: "PDF", icon: "doc.richtext")
+                uploadButton(label: "Document", icon: "doc")
+            }
+
+            multilineField(
+                placeholder: "Describe what you mapped and how it helped (optional).",
+                text: $data.mindMapDescription,
+                lineLimit: 2...6
+            )
+        }
+    }
+
+    private var whiteboardSection: some View {
+        methodCard(title: "Whiteboard Session", icon: "square.dashed") {
+            HStack(spacing: 8) {
+                uploadButton(label: "Whiteboard photos", icon: "photo.stack")
+                uploadButton(label: "PDF", icon: "doc.richtext")
+            }
+            multilineField(
+                placeholder: "Summarize what was discussed or drawn.",
+                text: $data.whiteboardSummary,
+                lineLimit: 2...6
+            )
+        }
+    }
+
+    private var stickyNotesSection: some View {
+        methodCard(title: "Sticky Notes", icon: "note.text") {
+            if data.stickyNotes.isEmpty {
+                Text("Add sticky notes to capture individual ideas.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach($data.stickyNotes) { $note in
+                    stickyNoteCard(note: $note)
+                }
+            }
+
+            Button(action: {
+                data.stickyNotes.append(StickyNote())
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Sticky Note")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func stickyNoteCard(note: Binding<StickyNote>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Title", text: note.title)
+                    .font(.system(size: 14, weight: .semibold))
+                Button(action: {
+                    data.stickyNotes.removeAll { $0.id == note.wrappedValue.id }
+                }) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.red)
+                }
+            }
+            TextField("Description", text: note.description, axis: .vertical)
+                .font(.system(size: 13))
+                .lineLimit(1...4)
+            HStack(spacing: 8) {
+                inlineTextField(placeholder: "Category (optional)", text: note.category)
+                inlineTextField(placeholder: "Priority (optional)", text: note.priority)
+            }
+        }
+        .padding(10)
+        .background(Color.yellow.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.yellow.opacity(0.30), lineWidth: 1)
+        )
+    }
+
+    private var discussionSection: some View {
+        methodCard(title: "Discussion", icon: "bubble.left.and.bubble.right") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Participants")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button(action: {
+                        data.discussion.participants.append(DiscussionParticipant())
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                            Text("Add Participant")
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                    }
+                }
+
+                if data.discussion.participants.isEmpty {
+                    Text("Add the people involved in this discussion.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach($data.discussion.participants) { $p in
+                        HStack(spacing: 8) {
+                            inlineTextField(placeholder: "Name", text: $p.name)
+                            inlineTextField(placeholder: "Role (optional)", text: $p.role)
+                            Button(action: {
+                                data.discussion.participants.removeAll { $0.id == p.id }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Discussion Summary")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "What was discussed?",
+                    text: $data.discussion.summary,
+                    lineLimit: 2...6
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Key Takeaways")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "What did you decide or learn?",
+                    text: $data.discussion.keyTakeaways,
+                    lineLimit: 2...6
+                )
+            }
+        }
+    }
+
+    private var aiBrainstormingSection: some View {
+        methodCard(title: "AI Brainstorming", icon: "sparkles") {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("AI Tool")
+                    .font(.system(size: 13, weight: .semibold))
+                Menu {
+                    ForEach(nebulaeAITools, id: \.self) { tool in
+                        Button(tool) { data.aiBrainstorming.aiTool = tool }
+                    }
+                } label: {
+                    HStack {
+                        Text(data.aiBrainstorming.aiTool.isEmpty ? "Select an AI tool" : data.aiBrainstorming.aiTool)
+                            .font(.system(size: 14))
+                            .foregroundStyle(data.aiBrainstorming.aiTool.isEmpty ? .secondary : .primary)
+                        Spacer()
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 42)
+                    .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.gray.opacity(0.16), lineWidth: 1)
+                    )
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Prompt Used")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "Paste or describe the prompt you used.",
+                    text: $data.aiBrainstorming.prompt,
+                    lineLimit: 2...6
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("AI Response Summary")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "Summarize the AI's response.",
+                    text: $data.aiBrainstorming.responseSummary,
+                    lineLimit: 2...6
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Reflection")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "Which AI suggestions were useful? Which did you ignore?",
+                    text: $data.aiBrainstorming.reflection,
+                    lineLimit: 2...6
+                )
+            }
+
+            uploadButton(label: "Attach conversation or file", icon: "paperclip")
+        }
+    }
+
+    private var researchFirstSection: some View {
+        methodCard(title: "Research", icon: "magnifyingglass") {
+            HStack {
+                Text("Sources")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button(action: {
+                    data.researchFirst.sources.append(ResearchSource())
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Add Source")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                }
+            }
+
+            if data.researchFirst.sources.isEmpty {
+                Text("Add articles, papers, or references that informed your idea.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach($data.researchFirst.sources) { $source in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            TextField("Title", text: $source.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            Button(action: {
+                                data.researchFirst.sources.removeAll { $0.id == source.id }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        inlineTextField(placeholder: "Link (optional)", text: $source.link)
+                        multilineField(
+                            placeholder: "Notes",
+                            text: $source.notes,
+                            lineLimit: 1...4
+                        )
+                    }
+                    .padding(10)
+                    .background(Color(red: 0.98, green: 0.98, blue: 0.99))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.gray.opacity(0.16), lineWidth: 1)
+                    )
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Main Findings")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "What did your research reveal?",
+                    text: $data.researchFirst.mainFindings,
+                    lineLimit: 2...6
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("How Research Changed Your Idea")
+                    .font(.system(size: 13, weight: .semibold))
+                multilineField(
+                    placeholder: "How did the research shape or reshape your idea?",
+                    text: $data.researchFirst.howChangedIdea,
+                    lineLimit: 2...6
+                )
+            }
+        }
+    }
+
+    private var otherMethodSection: some View {
+        methodCard(title: "Other Method", icon: "ellipsis.circle") {
+            multilineField(
+                placeholder: "Describe the brainstorming method you used.",
+                text: $data.otherMethodDescription,
+                lineLimit: 2...6
+            )
+        }
+    }
+
+    private var attachmentsBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Attachments")
+                    .font(.system(size: 15, weight: .bold))
+                Text("Optional")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .background(Color.gray.opacity(0.14))
+                    .clipShape(Capsule())
+                Spacer()
+            }
+
+            Button(action: {}) {
+                VStack(spacing: 6) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.blue)
+                    Text("Add sketches, photos, or documents")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(Color.blue.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var bottomActions: some View {
+        VStack(spacing: 10) {
+            Button(action: { onComplete(data) }) {
+                Text("Complete Section")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0.20, green: 0.55, blue: 0.90))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+
+            Button(action: { onSaveDraft(data) }) {
+                Text("Save Draft")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color.blue.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding(.top, 10)
+    }
+}
+
+struct SectionIntroSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let title: String
+    let iconName: String
+    let iconTint: Color
+    let iconBackground: Color
+    let description: String
+    let onContinue: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack {
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.black)
+                }
+            }
+
+            VStack(spacing: 14) {
+                Image(systemName: iconName)
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundStyle(iconTint)
+                    .frame(width: 78, height: 78)
+                    .background(iconBackground)
+                    .clipShape(Circle())
+
+                Text(title)
+                    .font(.system(size: 24, weight: .bold))
+
+                Text(description)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(spacing: 10) {
+                Button(action: onContinue) {
+                    Text("Continue")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color(red: 0.20, green: 0.55, blue: 0.90))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+
+                Button(action: onSkip) {
+                    Text("Skip Section")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.30, green: 0.30, blue: 0.30))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Color.gray.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(Color.gray.opacity(0.25), lineWidth: 1)
+                        )
+                }
+            }
+
+            Text("Skipping this section won't affect your project. You can enable it again anytime.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 4)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 20)
+    }
+}
+
+struct ProblemStatementSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var data: ProblemStatementData
+
+    let onSaveDraft: (ProblemStatementData) -> Void
+    let onComplete: (ProblemStatementData) -> Void
+
+    init(
+        existing: ProblemStatementData?,
+        onSaveDraft: @escaping (ProblemStatementData) -> Void,
+        onComplete: @escaping (ProblemStatementData) -> Void
+    ) {
+        self._data = State(initialValue: existing ?? ProblemStatementData())
+        self.onSaveDraft = onSaveDraft
+        self.onComplete = onComplete
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    whyThisMattersCard
+                    problemSummarySection
+                    backgroundSection
+                    affectedGroupsSection
+                    currentSolutionsSection
+                    limitationsSection
+                    rootCauseSection
+                    supportingResearchSection
+                    successCriteriaSection
+                    constraintsSection
+                    finalStatementSection
+                    generateButton
+                    scoreCard
+                    bottomActions
+                }
+                .padding(20)
+            }
+            .background(Color(red: 0.97, green: 0.98, blue: 0.99))
+            .navigationTitle("Problem Statement")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Problem Statement")
+                .font(.system(size: 22, weight: .bold))
+            Text("Clearly define the problem your project is trying to solve before designing a solution.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var whyThisMattersCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    data.whyThisMattersExpanded.toggle()
+                }
+            }) {
+                HStack(spacing: 10) {
+                    Text("💡")
+                        .font(.system(size: 20))
+                    Text("Why does this matter?")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.black)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(data.whyThisMattersExpanded ? 180 : 0))
+                }
+                .padding(14)
+            }
+            .buttonStyle(.plain)
+
+            if data.whyThisMattersExpanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("A strong problem statement keeps your project focused. It explains what problem you're solving, why it matters, who it affects, and how you'll know you've succeeded.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                    Text("Whether you're documenting a class project, engineering competition, research project, or personal build, defining the problem first makes the rest of the design process much easier.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color.cyan.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func sectionCard<Content: View>(
+        title: String,
+        subtitle: String? = nil,
+        required: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                if required {
+                    Text("Required")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color.red.opacity(0.12))
+                        .clipShape(Capsule())
+                } else {
+                    Text("Optional")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color.gray.opacity(0.14))
+                        .clipShape(Capsule())
+                }
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            content()
+        }
+    }
+
+    private func multilineField(placeholder: String, text: Binding<String>) -> some View {
+        ZStack(alignment: .topLeading) {
+            if text.wrappedValue.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+            }
+            TextField("", text: text, axis: .vertical)
+                .font(.system(size: 14))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .lineLimit(3...8)
+        }
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private var problemSummarySection: some View {
+        sectionCard(
+            title: "Problem Summary",
+            subtitle: "Briefly describe the problem your project is trying to solve.",
+            required: true
+        ) {
+            multilineField(placeholder: "Summarize the problem in 2–5 sentences.", text: $data.problemSummary)
+        }
+    }
+
+    private var backgroundSection: some View {
+        sectionCard(
+            title: "Background",
+            subtitle: "Explain why this problem exists and why it matters."
+        ) {
+            multilineField(placeholder: "Provide context, history, or explain why solving this problem is important.", text: $data.background)
+        }
+    }
+
+    private var affectedGroupsSection: some View {
+        sectionCard(title: "Who Is Affected?") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
+                ForEach(nebulaeAffectedGroups, id: \.self) { group in
+                    chip(label: group, isSelected: data.affectedGroups.contains(group)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if data.affectedGroups.contains(group) {
+                                data.affectedGroups.remove(group)
+                            } else {
+                                data.affectedGroups.insert(group)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if data.affectedGroups.contains("Other") {
+                TextField("Who else is affected?", text: $data.affectedGroupOther)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: data.affectedGroups)
+    }
+
+    private func chip(label: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                Text(label)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+            .foregroundStyle(isSelected ? .white : Color(red: 0.25, green: 0.25, blue: 0.25))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(
+                isSelected
+                    ? Color(red: 0.20, green: 0.55, blue: 0.90)
+                    : Color.gray.opacity(0.12)
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var currentSolutionsSection: some View {
+        sectionCard(title: "Current Solutions") {
+            multilineField(placeholder: "Describe how this problem is currently solved today.", text: $data.currentSolutions)
+        }
+    }
+
+    private var limitationsSection: some View {
+        sectionCard(title: "Limitations of Existing Solutions") {
+            multilineField(placeholder: "What are the shortcomings of current solutions?", text: $data.limitations)
+        }
+    }
+
+    private var rootCauseSection: some View {
+        sectionCard(title: "Root Cause") {
+            multilineField(placeholder: "What do you believe is causing this problem?", text: $data.rootCause)
+        }
+    }
+
+    private var supportingResearchSection: some View {
+        sectionCard(title: "Supporting Research") {
+            if data.supportingResearch.isEmpty {
+                Text("Add articles, papers, or references that support the problem.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach($data.supportingResearch) { $source in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            TextField("Source title", text: $source.title)
+                                .font(.system(size: 14, weight: .semibold))
+                            Button(action: {
+                                data.supportingResearch.removeAll { $0.id == source.id }
+                            }) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.red)
+                            }
+                        }
+                        TextField("Link (optional)", text: $source.link)
+                            .font(.system(size: 13))
+                            .autocapitalization(.none)
+                            .autocorrectionDisabled()
+                        TextField("Notes", text: $source.notes, axis: .vertical)
+                            .font(.system(size: 13))
+                            .lineLimit(1...4)
+                    }
+                    .padding(12)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                    )
+                }
+            }
+
+            Button(action: {
+                data.supportingResearch.append(ResearchSource())
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Source")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var successCriteriaSection: some View {
+        sectionCard(
+            title: "Success Criteria",
+            subtitle: "How will you know you've successfully solved the problem?"
+        ) {
+            if data.successCriteria.isEmpty {
+                Text("Add measurable, testable criteria (e.g. \"Detect wildfires within 10 seconds.\")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach($data.successCriteria) { $criterion in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.green)
+                            .padding(.top, 8)
+                        VStack(alignment: .leading, spacing: 6) {
+                            TextField("Criterion", text: $criterion.title)
+                                .font(.system(size: 14, weight: .semibold))
+                            TextField("Description (optional)", text: $criterion.summary, axis: .vertical)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1...3)
+                        }
+                        Button(action: {
+                            data.successCriteria.removeAll { $0.id == criterion.id }
+                        }) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.red)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(10)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                    )
+                }
+            }
+
+            Button(action: {
+                data.successCriteria.append(SuccessCriterion())
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Success Criterion")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var constraintsSection: some View {
+        sectionCard(title: "Constraints") {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
+                ForEach(nebulaeConstraints, id: \.self) { constraint in
+                    chip(label: constraint, isSelected: data.constraints.contains(constraint)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if data.constraints.contains(constraint) {
+                                data.constraints.remove(constraint)
+                            } else {
+                                data.constraints.insert(constraint)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if data.constraints.contains("Other") {
+                TextField("Describe the other constraint", text: $data.constraintOther)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: data.constraints)
+    }
+
+    private var finalStatementSection: some View {
+        sectionCard(
+            title: "Final Problem Statement",
+            subtitle: "Write one concise engineering problem statement that summarizes everything above."
+        ) {
+            multilineField(
+                placeholder: "Current wildfire detection methods often identify fires too late, allowing them to spread rapidly. This project aims to develop an autonomous drone capable of detecting wildfires earlier and providing real-time location data to emergency responders.",
+                text: $data.finalProblemStatement
+            )
+        }
+    }
+
+    private var generateButton: some View {
+        Button(action: generateProblemStatement) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("Generate Problem Statement")
+                    .font(.system(size: 15, weight: .bold))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.20, green: 0.55, blue: 0.90),
+                        Color(red: 0.50, green: 0.60, blue: 0.95)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func generateProblemStatement() {
+        var parts: [String] = []
+        let audience = describeAudience()
+        let summaryTrim = data.problemSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !summaryTrim.isEmpty {
+            parts.append(summaryTrim)
+        }
+        if !audience.isEmpty {
+            parts.append("This problem primarily affects \(audience).")
+        }
+        let limitationsTrim = data.limitations.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !limitationsTrim.isEmpty {
+            parts.append("Current solutions fall short because \(limitationsTrim.prefix(1).lowercased())\(limitationsTrim.dropFirst()).")
+        }
+        let firstCriterion = data.successCriteria.first(where: { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.title
+        if let firstCriterion, !firstCriterion.isEmpty {
+            parts.append("This project aims to \(firstCriterion.prefix(1).lowercased())\(firstCriterion.dropFirst()).")
+        }
+
+        let generated = parts.joined(separator: " ")
+        if !generated.isEmpty {
+            data.finalProblemStatement = generated
+        }
+    }
+
+    private func describeAudience() -> String {
+        var groups = data.affectedGroups
+            .filter { $0 != "Other" }
+            .sorted()
+        let otherTrim = data.affectedGroupOther.trimmingCharacters(in: .whitespacesAndNewlines)
+        if data.affectedGroups.contains("Other"), !otherTrim.isEmpty {
+            groups.append(otherTrim)
+        }
+        guard !groups.isEmpty else { return "" }
+        if groups.count == 1 { return groups[0].lowercased() }
+        let last = groups.removeLast()
+        return groups.map { $0.lowercased() }.joined(separator: ", ") + ", and " + last.lowercased()
+    }
+
+    private var scoreCard: some View {
+        let items = scoreItems()
+        let passed = items.filter { $0.passed }.count
+        let score = Double(passed) / Double(items.count) * 10
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("📊 Problem Statement Quality")
+                    .font(.system(size: 15, weight: .bold))
+                Spacer()
+                Text(String(format: "%.1f / 10", score))
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(score >= 7 ? .green : (score >= 4 ? .orange : .red))
+            }
+
+            ForEach(items.indices, id: \.self) { i in
+                HStack(spacing: 8) {
+                    Text(items[i].passed ? "✅" : "⚠")
+                        .font(.system(size: 13))
+                    Text(items[i].label)
+                        .font(.system(size: 13))
+                        .foregroundStyle(items[i].passed ? .primary : .secondary)
+                }
+            }
+
+            Text("This isn't a grade — just a completeness check to help you write stronger documentation.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+        }
+        .padding(14)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+        )
+    }
+
+    private struct ScoreItem {
+        let label: String
+        let passed: Bool
+    }
+
+    private func scoreItems() -> [ScoreItem] {
+        let hasSummary = !data.problemSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasAudience = !data.affectedGroups.isEmpty
+        let hasCriteria = data.successCriteria.contains(where: { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let hasResearch = !data.supportingResearch.isEmpty
+        let hasFinal = !data.finalProblemStatement.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return [
+            ScoreItem(label: hasSummary ? "Problem is clearly defined" : "Add a problem summary", passed: hasSummary),
+            ScoreItem(label: hasAudience ? "Target audience identified" : "Identify who is affected", passed: hasAudience),
+            ScoreItem(label: hasCriteria ? "Measurable success criteria" : "Add measurable success criteria", passed: hasCriteria),
+            ScoreItem(label: hasResearch ? "Supporting research added" : "Consider adding supporting research", passed: hasResearch),
+            ScoreItem(label: hasFinal ? "Final statement written" : "Write a final problem statement", passed: hasFinal)
+        ]
+    }
+
+    private var bottomActions: some View {
+        VStack(spacing: 10) {
+            Button(action: { onComplete(data) }) {
+                Text("Complete Section")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color(red: 0.20, green: 0.55, blue: 0.90))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+
+            Button(action: { onSaveDraft(data) }) {
+                Text("Save Draft")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.20, green: 0.55, blue: 0.90))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color.blue.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+        .padding(.top, 6)
     }
 }
 
